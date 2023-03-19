@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 """
 Converting the 'parse-tree' output of pyparsing to a SPARQL Algebra expression
 
@@ -955,6 +957,58 @@ class ExpressionNotCoveredException(Exception):  # noqa: N818
     pass
 
 
+ONE_ARG_BUILTINS: Set[str] = {
+    "BOUND",
+    "isIRI",
+    "isBLANK",
+    "isLITERAL",
+    "isNUMERIC",
+    "IRI",
+    "BNODE",
+    "ENCODE_FOR_URI",
+    # # # 17.4.2 Functions on RDF Terms
+    "STR",
+    "LANG",
+    "DATATYPE",
+    # # # 17.4.3 Functions on Strings
+    "STRLEN",
+    "LCASE",
+    "UCASE",
+    # # # 17.4.4 Functions on Numerics
+    "ABS",
+    "ROUND",
+    "CEIL",
+    "FLOOR",
+    # # # 17.4.5 Functions on Dates and Times
+    "YEAR",
+    "MONTH",
+    "DAY",
+    "HOURS",
+    "MINUTES",
+    "SECONDS",
+    "TIMEZONE",
+    "TZ",
+    # # # 17.4.6 Hash functions
+    "MD5",
+    "SHA1",
+    "SHA256",
+    "SHA384",
+    "SHA512",
+}
+ONE_ARG_BUILTINS_PATT = re.compile("Builtin_(" + "|".join(ONE_ARG_BUILTINS) + ")$")
+TWO_ARG_BUILTINS: Set[str] = {
+    "STRSTARTS",
+    "STRENDS",
+    "CONTAINS",
+    "STRBEFORE",
+    "STRAFTER",
+    "STRDT",
+    "STRLANG",
+    "LANGMATCHES",
+}
+TWO_ARG_BUILTINS_PATT = re.compile("Builtin_(" + "|".join(TWO_ARG_BUILTINS) + ")$")
+
+
 class AlgebraTranslator:
     """Translator of a Query's algebra to its equivalent SPARQL (string).
 
@@ -1298,9 +1352,6 @@ class AlgebraTranslator:
 
             # # 17.4 Function Definitions
             # # # 17.4.1 Functional Forms
-            elif node.name.endswith("BOUND"):
-                bound_var = self.convert_node_arg(node.arg)
-                self._replace("{Builtin_BOUND}", "bound(" + bound_var + ")")
             elif node.name.endswith("IF"):
                 arg2 = self.convert_node_arg(node.arg2)
                 arg3 = self.convert_node_arg(node.arg3)
@@ -1353,153 +1404,40 @@ class AlgebraTranslator:
             # # # # NOT IN: Covered in "RelationalExpression"
 
             # # # 17.4.2 Functions on RDF Terms
-            elif node.name.endswith("Builtin_isIRI"):
-                self._replace(
-                    "{Builtin_isIRI}", "isIRI(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_isBLANK"):
-                self._replace(
-                    "{Builtin_isBLANK}",
-                    "isBLANK(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name.endswith("Builtin_isLITERAL"):
-                self._replace(
-                    "{Builtin_isLITERAL}",
-                    "isLITERAL(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name.endswith("Builtin_isNUMERIC"):
-                self._replace(
-                    "{Builtin_isNUMERIC}",
-                    "isNUMERIC(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name.endswith("Builtin_STR"):
-                self._replace(
-                    "{Builtin_STR}", "STR(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_LANG"):
-                self._replace(
-                    "{Builtin_LANG}", "LANG(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_DATATYPE"):
-                self._replace(
-                    "{Builtin_DATATYPE}",
-                    "DATATYPE(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name.endswith("Builtin_IRI"):
-                self._replace(
-                    "{Builtin_IRI}", "IRI(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_BNODE"):
-                self._replace(
-                    "{Builtin_BNODE}", "BNODE(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("STRDT"):
-                self._replace(
-                    "{Builtin_STRDT}",
-                    "STRDT("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
-            elif node.name.endswith("Builtin_STRLANG"):
-                self._replace(
-                    "{Builtin_STRLANG}",
-                    "STRLANG("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
             elif node.name.endswith("Builtin_UUID"):
                 self._replace("{Builtin_UUID}", "UUID()")
             elif node.name.endswith("Builtin_STRUUID"):
                 self._replace("{Builtin_STRUUID}", "STRUUID()")
 
             # # # 17.4.3 Functions on Strings
-            elif node.name.endswith("Builtin_STRLEN"):
-                self._replace(
-                    "{Builtin_STRLEN}",
-                    "STRLEN(" + self.convert_node_arg(node.arg) + ")",
-                )
             elif node.name.endswith("Builtin_SUBSTR"):
                 args = [self.convert_node_arg(node.arg), node.start]
                 if node.length:
                     args.append(node.length)
                 expr = "SUBSTR(" + ", ".join(args) + ")"
                 self._replace("{Builtin_SUBSTR}", expr)
-            elif node.name.endswith("Builtin_UCASE"):
+            elif TWO_ARG_BUILTINS_PATT.search(node.name):
+                found_builtin = TWO_ARG_BUILTINS_PATT.search(node.name).group(1)
                 self._replace(
-                    "{Builtin_UCASE}", "UCASE(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_LCASE"):
-                self._replace(
-                    "{Builtin_LCASE}", "LCASE(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name.endswith("Builtin_STRSTARTS"):
-                self._replace(
-                    "{Builtin_STRSTARTS}",
-                    "STRSTARTS("
+                    f"{{Builtin_{found_builtin}}}",
+                    found_builtin
+                    + "("
                     + self.convert_node_arg(node.arg1)
                     + ", "
                     + self.convert_node_arg(node.arg2)
                     + ")",
                 )
-            elif node.name.endswith("Builtin_STRENDS"):
+            elif ONE_ARG_BUILTINS_PATT.search(node.name):
+                found_builtin = ONE_ARG_BUILTINS_PATT.search(node.name).group(1)
                 self._replace(
-                    "{Builtin_STRENDS}",
-                    "STRENDS("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
-            elif node.name.endswith("Builtin_CONTAINS"):
-                self._replace(
-                    "{Builtin_CONTAINS}",
-                    "CONTAINS("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
-            elif node.name.endswith("Builtin_STRBEFORE"):
-                self._replace(
-                    "{Builtin_STRBEFORE}",
-                    "STRBEFORE("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
-            elif node.name.endswith("Builtin_STRAFTER"):
-                self._replace(
-                    "{Builtin_STRAFTER}",
-                    "STRAFTER("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
-            elif node.name.endswith("Builtin_ENCODE_FOR_URI"):
-                self._replace(
-                    "{Builtin_ENCODE_FOR_URI}",
-                    "ENCODE_FOR_URI(" + self.convert_node_arg(node.arg) + ")",
+                    f"{{Builtin_{found_builtin}}}",
+                    found_builtin + "(" + self.convert_node_arg(node.arg) + ")",
                 )
             elif node.name.endswith("Builtin_CONCAT"):
                 expr = "CONCAT({vars})".format(
                     vars=", ".join(self.convert_node_arg(elem) for elem in node.arg)
                 )
                 self._replace("{Builtin_CONCAT}", expr)
-            elif node.name.endswith("Builtin_LANGMATCHES"):
-                self._replace(
-                    "{Builtin_LANGMATCHES}",
-                    "LANGMATCHES("
-                    + self.convert_node_arg(node.arg1)
-                    + ", "
-                    + self.convert_node_arg(node.arg2)
-                    + ")",
-                )
             elif node.name.endswith("REGEX"):
                 args = [
                     self.convert_node_arg(node.text),
@@ -1520,88 +1458,14 @@ class AlgebraTranslator:
                 )
 
             # # # 17.4.4 Functions on Numerics
-            elif node.name == "Builtin_ABS":
-                self._replace(
-                    "{Builtin_ABS}", "ABS(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_ROUND":
-                self._replace(
-                    "{Builtin_ROUND}", "ROUND(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_CEIL":
-                self._replace(
-                    "{Builtin_CEIL}", "CEIL(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_FLOOR":
-                self._replace(
-                    "{Builtin_FLOOR}", "FLOOR(" + self.convert_node_arg(node.arg) + ")"
-                )
             elif node.name == "Builtin_RAND":
                 self._replace("{Builtin_RAND}", "RAND()")
 
             # # # 17.4.5 Functions on Dates and Times
             elif node.name == "Builtin_NOW":
                 self._replace("{Builtin_NOW}", "NOW()")
-            elif node.name == "Builtin_YEAR":
-                self._replace(
-                    "{Builtin_YEAR}", "YEAR(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_MONTH":
-                self._replace(
-                    "{Builtin_MONTH}", "MONTH(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_DAY":
-                self._replace(
-                    "{Builtin_DAY}", "DAY(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_HOURS":
-                self._replace(
-                    "{Builtin_HOURS}", "HOURS(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_MINUTES":
-                self._replace(
-                    "{Builtin_MINUTES}",
-                    "MINUTES(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name == "Builtin_SECONDS":
-                self._replace(
-                    "{Builtin_SECONDS}",
-                    "SECONDS(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name == "Builtin_TIMEZONE":
-                self._replace(
-                    "{Builtin_TIMEZONE}",
-                    "TIMEZONE(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name == "Builtin_TZ":
-                self._replace(
-                    "{Builtin_TZ}", "TZ(" + self.convert_node_arg(node.arg) + ")"
-                )
 
             # # # 17.4.6 Hash functions
-            elif node.name == "Builtin_MD5":
-                self._replace(
-                    "{Builtin_MD5}", "MD5(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_SHA1":
-                self._replace(
-                    "{Builtin_SHA1}", "SHA1(" + self.convert_node_arg(node.arg) + ")"
-                )
-            elif node.name == "Builtin_SHA256":
-                self._replace(
-                    "{Builtin_SHA256}",
-                    "SHA256(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name == "Builtin_SHA384":
-                self._replace(
-                    "{Builtin_SHA384}",
-                    "SHA384(" + self.convert_node_arg(node.arg) + ")",
-                )
-            elif node.name == "Builtin_SHA512":
-                self._replace(
-                    "{Builtin_SHA512}",
-                    "SHA512(" + self.convert_node_arg(node.arg) + ")",
-                )
 
             # Other
             elif node.name == "values":
