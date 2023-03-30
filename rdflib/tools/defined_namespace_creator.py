@@ -77,7 +77,7 @@ def get_target_namespace_elements(
 ) -> Tuple[List[Tuple[str, str]], List[str]]:
     namespaces = {"dcterms": DCTERMS, "owl": OWL, "rdfs": RDFS, "skos": SKOS}
     q = """
-        SELECT DISTINCT ?s ?def
+        SELECT ?s (GROUP_CONCAT(DISTINCT STR(?def)) AS ?defs)
         WHERE {
             # all things in the RDF data (anything RDF.type...)
             ?s a ?o .
@@ -90,6 +90,7 @@ def get_target_namespace_elements(
             # only get results for the target namespace (supplied by user)
             FILTER STRSTARTS(STR(?s), "xxx")
         }
+        GROUP BY ?s
         """.replace(
         "xxx", target_namespace
     )
@@ -105,7 +106,7 @@ def get_target_namespace_elements(
     for e in elements:
         desc = e[1].replace("\n", " ")
         elements_strs.append(
-            f"    {e[0].replace(args.target_namespace, '')}: URIRef  # {desc}\n"
+            f"    {e[0].replace(target_namespace, '')}: URIRef  # {desc}\n"
         )
 
     return elements, elements_strs
